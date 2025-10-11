@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Share2, Users, Plus, Calculator, CheckCircle, Clock, XCircle, ShoppingCart, Trash2, Edit2, RotateCcw, Mail, HelpCircle, TrendingUp, TrendingDown } from 'lucide-react';
+import { Share2, Users, Plus, Calculator, CheckCircle, Clock, XCircle, ShoppingCart, Trash2, Edit2, RotateCcw, Info, TrendingUp, TrendingDown, Mail } from 'lucide-react';
 
 const PartyCalculator = () => {
-  const [screen, setScreen] = useState('main');
+  const [screen, setScreen] = useState('splash');
   const [activeTab, setActiveTab] = useState('participants');
   const [eventName, setEventName] = useState('');
   const [participants, setParticipants] = useState([]);
   const [purchases, setPurchases] = useState([]);
   const [consumption, setConsumption] = useState({});
-  const [newParticipant, setNewParticipant] = useState({ name: '', phone: '' });
+  const [newParticipant, setNewParticipant] = useState({ name: '' });
   const [editingParticipant, setEditingParticipant] = useState(null);
   const [editingPurchase, setEditingPurchase] = useState(null);
   const [newPurchase, setNewPurchase] = useState({
@@ -20,6 +20,22 @@ const PartyCalculator = () => {
   const [settlements, setSettlements] = useState([]);
   const [paymentStatuses, setPaymentStatuses] = useState({});
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [emailCopied, setEmailCopied] = useState(false);
+
+  // Проверка, запущено ли в Telegram
+  const isTelegramApp = () => {
+    return window.Telegram?.WebApp?.initData !== undefined;
+  };
+
+  useEffect(() => {
+    if (screen === 'splash') {
+      const timer = setTimeout(() => {
+        setScreen('main');
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [screen]);
 
   const resetAll = () => {
     setScreen('main');
@@ -28,7 +44,7 @@ const PartyCalculator = () => {
     setParticipants([]);
     setPurchases([]);
     setConsumption({});
-    setNewParticipant({ name: '', phone: '' });
+    setNewParticipant({ name: '' });
     setNewPurchase({
       product: '',
       price: '',
@@ -49,8 +65,13 @@ const PartyCalculator = () => {
 
   const addParticipant = () => {
     if (newParticipant.name.trim() && !participants.find(p => p.name === newParticipant.name)) {
-      setParticipants([...participants, { ...newParticipant, id: Date.now() }]);
-      setNewParticipant({ name: '', phone: '' });
+      if (Object.keys(consumption).length > 0) {
+        if (!window.confirm('⚠️ Вы уже распределили потребление. При добавлении нового участника вам нужно будет указать его долю. Продолжить?')) {
+          return;
+        }
+      }
+      setParticipants([...participants, { name: newParticipant.name, id: Date.now() }]);
+      setNewParticipant({ name: '' });
     }
   };
 
@@ -119,7 +140,6 @@ const PartyCalculator = () => {
     }
   };
 
-  // Группировка покупок по продукту + цена
   const getGroupedPurchases = () => {
     const groups = {};
     purchases.forEach(p => {
@@ -139,7 +159,6 @@ const PartyCalculator = () => {
     return Object.values(groups);
   };
 
-  // Проверка дубликатов названий
   const getProductDuplicates = () => {
     const map = {};
     purchases.forEach(p => {
@@ -153,7 +172,6 @@ const PartyCalculator = () => {
     return result;
   };
 
-  // Обновление потребления
   const updateConsumption = (groupKey, participantId, value) => {
     const val = parseFloat(value);
     setConsumption({
@@ -162,7 +180,6 @@ const PartyCalculator = () => {
     });
   };
 
-  // Быстрая установка долей
   const quickSet = (groupKey, participantId, fraction, totalQty) => {
     let val = 0;
     if (fraction === '0') {
@@ -185,29 +202,22 @@ const PartyCalculator = () => {
     });
   };
 
-  // Распределить один продукт поровну
   const autoDistributeProduct = (groupKey) => {
     const group = getGroupedPurchases().find(g => g.key === groupKey);
     if (!group) return;
     
     const cnt = participants.length;
-    const per = group.totalQuantity / cnt;
-    let distributed = 0;
+    const baseShare = Math.floor((group.totalQuantity * 100) / cnt) / 100;
+    const remainder = Math.round((group.totalQuantity - baseShare * cnt) * 100);
     
     const newConsumption = { ...consumption };
     participants.forEach((p, i) => {
-      if (i === cnt - 1) {
-        newConsumption[`${groupKey}-${p.id}`] = Math.round((group.totalQuantity - distributed) * 100) / 100;
-      } else {
-        const share = Math.round(per * 100) / 100;
-        newConsumption[`${groupKey}-${p.id}`] = share;
-        distributed += share;
-      }
+      const extraCent = i < remainder ? 0.01 : 0;
+      newConsumption[`${groupKey}-${p.id}`] = baseShare + extraCent;
     });
     setConsumption(newConsumption);
   };
 
-  // Распределить все поровну
   const autoDistributeAll = () => {
     if (!window.confirm('Распределить все продукты поровну?')) return;
     
@@ -216,30 +226,23 @@ const PartyCalculator = () => {
     const newConsumption = {};
     
     groups.forEach(group => {
-      const per = group.totalQuantity / cnt;
-      let distributed = 0;
+      const baseShare = Math.floor((group.totalQuantity * 100) / cnt) / 100;
+      const remainder = Math.round((group.totalQuantity - baseShare * cnt) * 100);
       
       participants.forEach((p, i) => {
-        if (i === cnt - 1) {
-          newConsumption[`${group.key}-${p.id}`] = Math.round((group.totalQuantity - distributed) * 100) / 100;
-        } else {
-          const share = Math.round(per * 100) / 100;
-          newConsumption[`${group.key}-${p.id}`] = share;
-          distributed += share;
-        }
+        const extraCent = i < remainder ? 0.01 : 0;
+        newConsumption[`${group.key}-${p.id}`] = baseShare + extraCent;
       });
     });
     
     setConsumption(newConsumption);
   };
 
-  // Очистить таблицу потребления
   const clearConsumption = () => {
     if (!window.confirm('Очистить таблицу потребления?')) return;
     setConsumption({});
   };
 
-  // Статус баланса продукта
   const getConsumptionStatus = (groupKey) => {
     const group = getGroupedPurchases().find(g => g.key === groupKey);
     if (!group) return { filled: 0, total: 0, percent: 0, status: 'warn' };
@@ -264,13 +267,11 @@ const PartyCalculator = () => {
     };
   };
 
-  // Детализация покупок
   const getPurchaseDetails = () => {
     const details = {};
     participants.forEach(p => {
       details[p.name] = { spent: 0, purchases: [] };
     });
-
     purchases.forEach(purchase => {
       if (details[purchase.buyer]) {
         details[purchase.buyer].spent += purchase.total;
@@ -282,23 +283,19 @@ const PartyCalculator = () => {
         });
       }
     });
-
     return details;
   };
 
-  // Расчёт балансов
   const calculateBalances = () => {
     const balances = {};
     participants.forEach(p => {
       balances[p.name] = { spent: 0, owes: 0 };
     });
 
-    // Кто сколько потратил
     purchases.forEach(purchase => {
       balances[purchase.buyer].spent += purchase.total;
     });
 
-    // Кто сколько должен
     const groups = getGroupedPurchases();
     groups.forEach(group => {
       participants.forEach(p => {
@@ -311,7 +308,7 @@ const PartyCalculator = () => {
     const creditors = [];
     
     Object.entries(balances).forEach(([person, data]) => {
-      const balance = data.spent - data.owes;
+      const balance = Math.round((data.spent - data.owes) * 100) / 100;
       if (balance < -0.01) debts.push({ person, amount: -balance });
       if (balance > 0.01) creditors.push({ person, amount: balance });
     });
@@ -329,14 +326,14 @@ const PartyCalculator = () => {
         transactions.push({
           from: debt.person,
           to: creditor.person,
-          amount: Math.round(amount),
+          amount: Math.round(amount * 100) / 100,
           status: 'unpaid',
-          id: `${debt.person}-${creditor.person}`
+          id: `${debt.person}-${creditor.person}-${Date.now()}`
         });
       }
 
-      debt.amount -= amount;
-      creditor.amount -= amount;
+      debt.amount = Math.round((debt.amount - amount) * 100) / 100;
+      creditor.amount = Math.round((creditor.amount - amount) * 100) / 100;
 
       if (debt.amount < 0.01) debtIndex++;
       if (creditor.amount < 0.01) creditorIndex++;
@@ -359,50 +356,49 @@ const PartyCalculator = () => {
     settlements.forEach(s => {
       const statusIcon = paymentStatuses[s.id] === 'paid' ? '✅' : 
                         paymentStatuses[s.id] === 'pending' ? '⏳' : '❌';
-      text += `${statusIcon} ${s.from} → ${s.to}: ${s.amount}₽\n`;
+      text += `${statusIcon} ${s.from} → ${s.to}: ${s.amount.toFixed(2)}₽\n`;
     });
     
     return text;
   };
 
   const shareToMessenger = (platform) => {
-    const text = encodeURIComponent(generateShareText());
-    const links = {
-      whatsapp: `https://wa.me/?text=${text}`,
-      telegram: `https://t.me/share/url?text=${text}`,
-      viber: `viber://forward?text=${text}`,
-      vk: `https://vk.com/share.php?url=${text}`
-    };
+    const text = generateShareText();
     
-    window.open(links[platform], '_blank');
+    if (platform === 'telegram') {
+      const telegramUrl = `https://t.me/share/url?url=&text=${encodeURIComponent(text)}`;
+      window.open(telegramUrl, '_blank');
+    } else {
+      const encodedText = encodeURIComponent(text);
+      const links = {
+        whatsapp: `https://wa.me/?text=${encodedText}`,
+        viber: `viber://forward?text=${encodedText}`,
+        vk: `https://vk.com/share.php?title=${encodedText}`
+      };
+      window.open(links[platform], '_blank');
+    }
   };
 
-  const generatePaymentLink = (transaction) => {
-    const receiver = participants.find(p => p.name === transaction.to);
-    const phone = receiver?.phone || '';
-    const comment = encodeURIComponent(`${eventName} - расчёт`);
-    
-    if (phone) {
-      return `https://qr.nspk.ru/m?bank=100000000111&sum=${transaction.amount}&phone=${phone}&comment=${comment}`;
-    }
-    return `https://qr.nspk.ru/?amount=${transaction.amount}&comment=${comment}`;
+  const initiatePayment = (transaction) => {
+    const sbpLink = `https://qr.nspk.ru/proxyapp.htm?paylink=${encodeURIComponent(`https://qr.nspk.ru/?type=02&bank=100000000111&sum=${Math.round(transaction.amount * 100)}&cur=RUB&crc=0000`)}`;
+    window.open(sbpLink, '_blank');
+    setTimeout(() => {
+      updatePaymentStatus(transaction.id, 'pending');
+    }, 500);
   };
 
   const updatePaymentStatus = (transactionId, status) => {
     setPaymentStatuses({...paymentStatuses, [transactionId]: status});
   };
 
-  // Результаты для отображения
   const getResults = () => {
     const balances = {};
     participants.forEach(p => {
       balances[p.name] = { spent: 0, owes: 0 };
     });
-
     purchases.forEach(purchase => {
       balances[purchase.buyer].spent += purchase.total;
     });
-
     const groups = getGroupedPurchases();
     groups.forEach(group => {
       participants.forEach(p => {
@@ -410,14 +406,51 @@ const PartyCalculator = () => {
         balances[p.name].owes += consumed * group.price;
       });
     });
-
     return Object.entries(balances).map(([name, data]) => ({
       name,
-      spent: data.spent,
-      owes: data.owes,
-      balance: data.spent - data.owes
+      spent: Math.round(data.spent * 100) / 100,
+      owes: Math.round(data.owes * 100) / 100,
+      balance: Math.round((data.spent - data.owes) * 100) / 100
     }));
   };
+
+  const handleEmailClick = (e) => {
+    // В Telegram копируем email, в браузере - используем mailto
+    if (isTelegramApp()) {
+      e.preventDefault();
+      navigator.clipboard.writeText('e@mailvladimir.ru').then(() => {
+        setEmailCopied(true);
+        setTimeout(() => setEmailCopied(false), 2000);
+      }).catch(() => {
+        // Если не удалось скопировать, просто показываем alert
+        alert('Email: e@mailvladimir.ru');
+      });
+    }
+    // В обычном браузере ссылка сработает сама (mailto:)
+  };
+
+  if (screen === 'splash') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center p-4">
+        <div className="text-center">
+          <div className="mb-8 animate-bounce">
+            <div className="text-8xl">🎉</div>
+          </div>
+          <h1 className="text-5xl font-bold text-white mb-4">Party Calculator</h1>
+          <p className="text-xl text-white/90">
+            Интерактивный калькулятор расходов<br />
+            для вечеринок, пикников и поездок
+          </p>
+          <div className="mt-8">
+            <div className="inline-block animate-pulse">
+              <div className="w-16 h-16 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
+            </div>
+          </div>
+          <p className="text-white/70 text-sm mt-4">Добавь участников, покупки и получи идеальный расчёт без споров 💰</p>
+        </div>
+      </div>
+    );
+  }
 
   if (screen === 'main') {
     return (
@@ -450,15 +483,15 @@ const PartyCalculator = () => {
                 Создать мероприятие
               </button>
             </div>
-
             <div className="mt-8 pt-6 border-t border-gray-200 text-center text-sm text-gray-600">
-              <p className="mb-1">Разработчик: Владимир Васякин</p>
+              <p className="mb-2">Разработчик: Владимир Васякин</p>
               <a 
-                href="mailto:e@mailvladimir.ru" 
-                className="text-indigo-600 hover:text-indigo-700 flex items-center justify-center gap-1"
+                href="mailto:e@mailvladimir.ru?subject=Party Calculator - вопрос"
+                onClick={handleEmailClick}
+                className="text-indigo-600 hover:text-indigo-700 flex items-center justify-center gap-1 mx-auto transition"
               >
                 <Mail className="w-4 h-4" />
-                e@mailvladimir.ru
+                {emailCopied ? '✓ Скопировано!' : 'e@mailvladimir.ru'}
               </a>
             </div>
           </div>
@@ -472,8 +505,7 @@ const PartyCalculator = () => {
       { id: 'participants', label: 'Участники', icon: Users },
       { id: 'purchases', label: 'Покупки', icon: ShoppingCart },
       { id: 'consumption', label: 'Потребление', icon: Calculator },
-      { id: 'settlement', label: 'Расчёты', icon: CheckCircle },
-      { id: 'help', label: 'Помощь', icon: HelpCircle }
+      { id: 'settlement', label: 'Расчёты', icon: CheckCircle }
     ];
 
     const purchaseDetails = getPurchaseDetails();
@@ -490,15 +522,23 @@ const PartyCalculator = () => {
                 <h2 className="text-xl font-bold text-gray-800">{eventName}</h2>
                 <p className="text-sm text-gray-600">{participants.length} участников</p>
               </div>
-              <button
-                onClick={() => setShowResetConfirm(true)}
-                className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition"
-                title="Сбросить все"
-              >
-                <RotateCcw className="w-5 h-5" />
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowHelp(true)}
+                  className="p-2 text-indigo-500 hover:bg-indigo-50 rounded-lg transition"
+                  title="Помощь"
+                >
+                  <Info className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => setShowResetConfirm(true)}
+                  className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition"
+                  title="Сбросить все"
+                >
+                  <RotateCcw className="w-5 h-5" />
+                </button>
+              </div>
             </div>
-
             <div className="flex border-b border-gray-200 overflow-x-auto">
               {tabs.map(tab => {
                 const Icon = tab.icon;
@@ -518,7 +558,6 @@ const PartyCalculator = () => {
                 );
               })}
             </div>
-
             <div className="p-4 max-h-[70vh] overflow-y-auto">
               {activeTab === 'participants' && (
                 <div>
@@ -527,14 +566,8 @@ const PartyCalculator = () => {
                       type="text"
                       placeholder="Имя участника"
                       value={newParticipant.name}
-                      onChange={(e) => setNewParticipant({...newParticipant, name: e.target.value})}
-                      className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none"
-                    />
-                    <input
-                      type="tel"
-                      placeholder="Телефон для СБП (необязательно)"
-                      value={newParticipant.phone}
-                      onChange={(e) => setNewParticipant({...newParticipant, phone: e.target.value})}
+                      onChange={(e) => setNewParticipant({name: e.target.value})}
+                      onKeyPress={(e) => e.key === 'Enter' && addParticipant()}
                       className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none"
                     />
                     <button
@@ -545,7 +578,6 @@ const PartyCalculator = () => {
                       Добавить участника
                     </button>
                   </div>
-
                   <div className="space-y-2">
                     {participants.map((p) => (
                       <div key={p.id} className="bg-gray-50 px-4 py-3 rounded-lg">
@@ -556,13 +588,7 @@ const PartyCalculator = () => {
                               value={editingParticipant.name}
                               onChange={(e) => setEditingParticipant({...editingParticipant, name: e.target.value})}
                               className="w-full px-2 py-1 border-2 border-indigo-500 rounded focus:outline-none"
-                            />
-                            <input
-                              type="tel"
-                              value={editingParticipant.phone || ''}
-                              onChange={(e) => setEditingParticipant({...editingParticipant, phone: e.target.value})}
-                              placeholder="Телефон для СБП"
-                              className="w-full px-2 py-1 border-2 border-indigo-500 rounded focus:outline-none"
+                              autoFocus
                             />
                             <div className="flex gap-2">
                               <button
@@ -581,10 +607,7 @@ const PartyCalculator = () => {
                           </div>
                         ) : (
                           <div className="flex items-center justify-between">
-                            <div>
-                              <span className="font-medium text-gray-700">{p.name}</span>
-                              {p.phone && <p className="text-xs text-gray-500">{p.phone}</p>}
-                            </div>
+                            <span className="font-medium text-gray-700">{p.name}</span>
                             <div className="flex gap-2">
                               <button
                                 onClick={() => startEditParticipant(p)}
@@ -604,7 +627,6 @@ const PartyCalculator = () => {
                       </div>
                     ))}
                   </div>
-
                   {participants.length < 2 && (
                     <p className="text-sm text-gray-500 mt-4 text-center">
                       Добавьте минимум 2 участников
@@ -612,7 +634,6 @@ const PartyCalculator = () => {
                   )}
                 </div>
               )}
-
               {activeTab === 'purchases' && (
                 <div>
                   {participants.length < 2 ? (
@@ -622,6 +643,32 @@ const PartyCalculator = () => {
                     </div>
                   ) : (
                     <>
+                      {purchases.length > 0 && (
+                        <div className="mb-4">
+                          <h3 className="font-semibold text-gray-700 mb-3">💰 Общие расходы</h3>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-4 rounded-xl text-white text-center">
+                              <p className="text-xs opacity-90 mb-1">Всего потрачено</p>
+                              <p className="text-3xl font-bold">
+                                {purchases.reduce((sum, p) => sum + p.total, 0).toFixed(2)}₽
+                              </p>
+                            </div>
+                            {groups.length > 0 && groups.slice(0, 3).map((group, i) => (
+                              <div key={group.key} className={`bg-gradient-to-br ${
+                                i === 0 ? 'from-blue-500 to-cyan-600' :
+                                i === 1 ? 'from-purple-500 to-pink-600' :
+                                'from-orange-500 to-red-600'
+                              } p-4 rounded-xl text-white text-center`}>
+                                <p className="text-xs opacity-90 mb-1">{group.product}</p>
+                                <p className="text-2xl font-bold">
+                                  {(group.totalQuantity * group.price).toFixed(2)}₽
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       <div className="bg-indigo-50 p-4 rounded-lg mb-4">
                         <h3 className="font-semibold text-gray-700 mb-3">Новая покупка</h3>
                         <div className="space-y-2">
@@ -636,6 +683,7 @@ const PartyCalculator = () => {
                           <div className="grid grid-cols-2 gap-2">
                             <input
                               type="number"
+                              step="0.01"
                               placeholder="Цена"
                               value={newPurchase.price}
                               onChange={(e) => setNewPurchase({...newPurchase, price: e.target.value})}
@@ -643,13 +691,13 @@ const PartyCalculator = () => {
                             />
                             <input
                               type="number"
+                              step="0.01"
                               placeholder="Количество"
                               value={newPurchase.quantity}
                               onChange={(e) => setNewPurchase({...newPurchase, quantity: e.target.value})}
                               className="px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none"
                             />
                           </div>
-
                           {newPurchase.price && newPurchase.quantity && (
                             <div className="bg-white px-3 py-2 rounded-lg">
                               <span className="text-sm text-gray-600">Сумма: </span>
@@ -658,7 +706,6 @@ const PartyCalculator = () => {
                               </span>
                             </div>
                           )}
-
                           <select
                             value={newPurchase.buyer}
                             onChange={(e) => setNewPurchase({...newPurchase, buyer: e.target.value})}
@@ -669,7 +716,6 @@ const PartyCalculator = () => {
                               <option key={p.id} value={p.name}>{p.name}</option>
                             ))}
                           </select>
-
                           <button
                             onClick={addPurchase}
                             disabled={!newPurchase.product || !newPurchase.price || !newPurchase.quantity || !newPurchase.buyer}
@@ -679,28 +725,85 @@ const PartyCalculator = () => {
                           </button>
                         </div>
                       </div>
-
                       {purchases.length > 0 && (
-                        <div className="mb-4">
-                          <h3 className="font-semibold text-gray-700 mb-3">📦 Детализация покупок</h3>
-                          {Object.entries(purchaseDetails).map(([person, data]) => (
-                            data.purchases.length > 0 && (
-                              <div key={person} className="bg-gray-50 p-3 rounded-lg mb-2">
-                                <p className="font-medium text-gray-800">{person} 🧑</p>
-                                {data.purchases.map((p, i) => (
-                                  <p key={i} className="text-xs text-gray-600">
-                                    {p.product}: {p.price}₽ × {p.quantity} = {p.total.toFixed(2)}₽
-                                  </p>
-                                ))}
-                                <p className="text-sm font-bold text-indigo-600 mt-1">
-                                  Потратил: {data.spent.toFixed(2)}₽
-                                </p>
-                              </div>
-                            )
-                          ))}
-                        </div>
+                        <>
+                          {Object.keys(consumption).length > 0 && (
+                            <div className="mb-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg p-4">
+                              <h3 className="font-semibold text-yellow-900 mb-2 flex items-center gap-2">
+                                🎯 Честное распределение по потреблению
+                              </h3>
+                              <ul className="text-sm text-gray-700 space-y-1">
+                                {groups.map(group => {
+                                  const consumers = participants.filter(p => 
+                                    (consumption[`${group.key}-${p.id}`] || 0) > 0
+                                  );
+                                  if (consumers.length === 0) return null;
+                                  return (
+                                    <li key={group.key}>
+                                      • <strong>{group.product}</strong> {
+                                        consumers.length === participants.length 
+                                          ? 'поровну на всех'
+                                          : `делили ${consumers.map(p => p.name).join(', ')}`
+                                      }
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                          )}
+                          
+                          <div className="mb-4">
+                            <h3 className="font-semibold text-gray-700 mb-3">📦 Детализация покупок</h3>
+                            {Object.entries(purchaseDetails).map(([person, data]) => (
+                              data.purchases.length > 0 && (
+                                <div key={person} className="bg-gradient-to-r from-indigo-50 to-purple-50 border-2 border-indigo-200 p-4 rounded-lg mb-3">
+                                  <p className="font-bold text-lg text-indigo-900 mb-2">{person} 🧑</p>
+                                  <div className="space-y-1 mb-2">
+                                    {data.purchases.map((p, i) => (
+                                      <p key={i} className="text-sm text-gray-700">
+                                        <span className="font-medium">Покупка #{i + 1}:</span> {p.product} ({p.price.toFixed(2)}₽) × {p.quantity} = <span className="font-semibold">{p.total.toFixed(2)}₽</span>
+                                      </p>
+                                    ))}
+                                  </div>
+                                  <div className="border-t-2 border-indigo-300 pt-2 mt-2">
+                                    <p className="text-base font-bold text-indigo-600">
+                                      Потратил: {data.spent.toFixed(2)}₽
+                                    </p>
+                                  </div>
+                                </div>
+                              )
+                            ))}
+                          </div>
+                          
+                          {Object.keys(consumption).length > 0 && (
+                            <div className="mb-4 bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                              <h3 className="font-semibold text-blue-900 mb-3 flex items-center gap-2">
+                                🍽️ Что кто потребил
+                              </h3>
+                              {participants.map(p => {
+                                const consumed = groups.filter(g => (consumption[`${g.key}-${p.id}`] || 0) > 0);
+                                if (consumed.length === 0) return null;
+                                return (
+                                  <div key={p.id} className="mb-3 bg-white p-3 rounded-lg">
+                                    <p className="font-bold text-gray-800 mb-1">{p.name} 🧑</p>
+                                    {consumed.map(g => {
+                                      const qty = consumption[`${g.key}-${p.id}`] || 0;
+                                      return (
+                                        <p key={g.key} className="text-sm text-gray-600">
+                                          {g.product} = {qty} × {g.price.toFixed(2)}₽ = <span className="font-semibold">{(qty * g.price).toFixed(2)}₽</span>
+                                        </p>
+                                      );
+                                    })}
+                                    <p className="text-sm font-bold text-blue-600 mt-1 border-t border-gray-200 pt-1">
+                                      Должен был: {consumed.reduce((sum, g) => sum + (consumption[`${g.key}-${p.id}`] || 0) * g.price, 0).toFixed(2)}₽
+                                    </p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </>
                       )}
-
                       <div className="space-y-2">
                         <h3 className="font-semibold text-gray-700">Все покупки</h3>
                         {purchases.map((purchase) => (
@@ -716,12 +819,14 @@ const PartyCalculator = () => {
                                 <div className="grid grid-cols-2 gap-2">
                                   <input
                                     type="number"
+                                    step="0.01"
                                     value={editingPurchase.price}
                                     onChange={(e) => setEditingPurchase({...editingPurchase, price: e.target.value})}
                                     className="px-2 py-1 border-2 border-indigo-500 rounded focus:outline-none"
                                   />
                                   <input
                                     type="number"
+                                    step="0.01"
                                     value={editingPurchase.quantity}
                                     onChange={(e) => setEditingPurchase({...editingPurchase, quantity: e.target.value})}
                                     className="px-2 py-1 border-2 border-indigo-500 rounded focus:outline-none"
@@ -748,7 +853,7 @@ const PartyCalculator = () => {
                                   <div>
                                     <p className="font-semibold text-gray-800">{purchase.product}</p>
                                     <p className="text-xs text-gray-600">
-                                      {purchase.price}₽ × {purchase.quantity} = {purchase.total.toFixed(2)}₽
+                                      {purchase.price.toFixed(2)}₽ × {purchase.quantity} = {purchase.total.toFixed(2)}₽
                                     </p>
                                     <p className="text-xs text-gray-600">Купил: {purchase.buyer}</p>
                                   </div>
@@ -772,7 +877,6 @@ const PartyCalculator = () => {
                           </div>
                         ))}
                       </div>
-
                       {purchases.length === 0 && (
                         <p className="text-sm text-gray-500 mt-4 text-center">
                           Пока нет покупок
@@ -782,7 +886,6 @@ const PartyCalculator = () => {
                   )}
                 </div>
               )}
-
               {activeTab === 'consumption' && (
                 <div>
                   {purchases.length === 0 ? (
@@ -809,7 +912,6 @@ const PartyCalculator = () => {
                           </button>
                         </div>
                       </div>
-
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm border-collapse">
                           <thead>
@@ -828,7 +930,7 @@ const PartyCalculator = () => {
                                         {group.product}
                                         {showPrice && (
                                           <div className="text-xs text-gray-500 font-normal">
-                                            ({group.price}₽)
+                                            ({group.price.toFixed(2)}₽)
                                           </div>
                                         )}
                                       </div>
@@ -873,6 +975,7 @@ const PartyCalculator = () => {
                                         <input
                                           type="number"
                                           inputMode="decimal"
+                                          step="0.01"
                                           placeholder="0"
                                           value={displayValue}
                                           onChange={(e) => updateConsumption(group.key, p.id, e.target.value)}
@@ -907,7 +1010,6 @@ const PartyCalculator = () => {
                   )}
                 </div>
               )}
-
               {activeTab === 'settlement' && (
                 <div>
                   {purchases.length === 0 ? (
@@ -975,7 +1077,6 @@ const PartyCalculator = () => {
                           );
                         })}
                       </div>
-
                       <div className="mb-6">
                         <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
                           🎯 Итоговые переводы
@@ -990,8 +1091,7 @@ const PartyCalculator = () => {
                             }[status];
                             
                             const StatusIcon = statusConfig.icon;
-                            const receiver = participants.find(p => p.name === transaction.to);
-
+                            
                             return (
                               <div key={transaction.id} className={`${statusConfig.bg} p-4 rounded-lg border-2 ${status === 'paid' ? 'border-green-200' : 'border-transparent'}`}>
                                 <div className="flex items-center justify-between mb-3">
@@ -999,10 +1099,7 @@ const PartyCalculator = () => {
                                     <p className="font-semibold text-gray-800">
                                       {transaction.from} → {transaction.to}
                                     </p>
-                                    <p className="text-2xl font-bold text-indigo-600">{transaction.amount}₽</p>
-                                    {receiver?.phone && (
-                                      <p className="text-xs text-gray-500">СБП: {receiver.phone}</p>
-                                    )}
+                                    <p className="text-2xl font-bold text-indigo-600">{transaction.amount.toFixed(2)}₽</p>
                                   </div>
                                   <StatusIcon className={`w-8 h-8 ${statusConfig.color}`} />
                                 </div>
@@ -1010,22 +1107,12 @@ const PartyCalculator = () => {
                                 <div className="flex gap-2">
                                   {status === 'unpaid' && (
                                     <>
-                                      {receiver?.phone ? (
-                                        <button
-                                          onClick={() => {
-                                            const link = generatePaymentLink(transaction);
-                                            window.open(link, '_blank');
-                                            updatePaymentStatus(transaction.id, 'pending');
-                                          }}
-                                          className="flex-1 bg-indigo-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700"
-                                        >
-                                          Оплатить через СБП
-                                        </button>
-                                      ) : (
-                                        <div className="flex-1 bg-gray-200 text-gray-600 py-2 rounded-lg text-xs text-center">
-                                          Укажите телефон получателя для СБП
-                                        </div>
-                                      )}
+                                      <button
+                                        onClick={() => initiatePayment(transaction)}
+                                        className="flex-1 bg-indigo-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700"
+                                      >
+                                        Оплатить через СБП
+                                      </button>
                                       <button
                                         onClick={() => updatePaymentStatus(transaction.id, 'paid')}
                                         className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg text-sm font-semibold hover:bg-gray-300"
@@ -1063,7 +1150,6 @@ const PartyCalculator = () => {
                           })}
                         </div>
                       </div>
-
                       <div className="border-t-2 border-gray-200 pt-4">
                         <p className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
                           <Share2 className="w-5 h-5" />
@@ -1095,7 +1181,6 @@ const PartyCalculator = () => {
                             VK
                           </button>
                         </div>
-
                         <button
                           onClick={() => {
                             setSettlements([]);
@@ -1110,61 +1195,69 @@ const PartyCalculator = () => {
                   )}
                 </div>
               )}
-
-              {activeTab === 'help' && (
-                <div className="space-y-4">
-                  <div className="bg-indigo-50 p-4 rounded-lg">
-                    <h3 className="font-semibold text-indigo-900 mb-2 flex items-center gap-2">
-                      <HelpCircle className="w-5 h-5" />
-                      Как пользоваться
-                    </h3>
-                    <ol className="text-sm text-gray-700 space-y-2">
-                      <li><strong>1. Участники</strong> — добавьте всех, кто участвует в мероприятии. Укажите телефон для оплаты через СБП.</li>
-                      <li><strong>2. Покупки</strong> — вносите все расходы: что купили, кто заплатил, количество.</li>
-                      <li><strong>3. Потребление</strong> — укажите кто сколько съел/выпил. Можно вводить числа или выбирать доли (1/2, 1/3 и т.д.)</li>
-                      <li><strong>4. Расчёты</strong> — нажмите "Рассчитать балансы" для автоматического расчёта переводов.</li>
-                    </ol>
-                  </div>
-
-                  <div className="bg-green-50 p-4 rounded-lg">
-                    <h3 className="font-semibold text-green-900 mb-2">💡 Полезные фишки</h3>
-                    <ul className="text-sm text-gray-700 space-y-1">
-                      <li>• Продукты с одной ценой объединяются в один столбец</li>
-                      <li>• Кнопки "Поровну" автоматически распределяют продукты</li>
-                      <li>• Цветовая индикация: 🟢 = ОК, 🟡 = недозаполнено, 🔴 = перебор</li>
-                      <li>• Доли (1/2, 1/3) автоматически учитывают остальных участников</li>
-                      <li>• СБП работает, если указан телефон получателя</li>
-                      <li>• Можно отправить итоги в любой мессенджер</li>
-                    </ul>
-                  </div>
-
-                  <div className="bg-yellow-50 p-4 rounded-lg">
-                    <h3 className="font-semibold text-yellow-900 mb-2">⚠️ Важно знать</h3>
-                    <ul className="text-sm text-gray-700 space-y-1">
-                      <li>• Минимум 2 участника для работы</li>
-                      <li>• При делении на доли последний получает остаток (решает проблему 0.33+0.33+0.33=0.99)</li>
-                      <li>• Данные хранятся только в текущей сессии браузера</li>
-                      <li>• При закрытии приложения всё удалится</li>
-                      <li>• Кнопка "Сброс" удаляет ВСЕ данные безвозвратно</li>
-                    </ul>
-                  </div>
-
-                  <div className="bg-gray-50 p-4 rounded-lg text-center">
-                    <p className="text-sm text-gray-600 mb-2">Вопросы или предложения?</p>
-                    <a 
-                      href="mailto:e@mailvladimir.ru" 
-                      className="text-indigo-600 hover:text-indigo-700 font-medium flex items-center justify-center gap-1"
-                    >
-                      <Mail className="w-4 h-4" />
-                      e@mailvladimir.ru
-                    </a>
-                    <p className="text-xs text-gray-500 mt-2">Разработчик: Владимир Васякин</p>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
+
+        {showHelp && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full max-h-[80vh] overflow-y-auto">
+              <h3 className="text-xl font-bold text-gray-800 mb-4">Как пользоваться</h3>
+              
+              <div className="space-y-4 text-sm">
+                <div>
+                  <h4 className="font-semibold text-gray-700 mb-1">1. Участники</h4>
+                  <p className="text-gray-600">Добавьте всех, кто участвует в мероприятии</p>
+                </div>
+                
+                <div>
+                  <h4 className="font-semibold text-gray-700 mb-1">2. Покупки</h4>
+                  <p className="text-gray-600">Внесите все расходы: что купили, кто заплатил, количество</p>
+                </div>
+                
+                <div>
+                  <h4 className="font-semibold text-gray-700 mb-1">3. Потребление</h4>
+                  <p className="text-gray-600">Укажите кто сколько съел/выпил. Можно вводить числа или выбирать доли (1/2, 1/3)</p>
+                </div>
+                
+                <div>
+                  <h4 className="font-semibold text-gray-700 mb-1">4. Расчёты</h4>
+                  <p className="text-gray-600">Нажмите "Рассчитать балансы" для автоматического расчёта переводов. После расчета можно оплатить через СБП</p>
+                </div>
+
+                <div className="pt-4 border-t border-gray-200">
+                  <h4 className="font-semibold text-gray-700 mb-2">💡 Полезные фишки</h4>
+                  <ul className="text-gray-600 space-y-1">
+                    <li>• Продукты с одной ценой объединяются в один столбец</li>
+                    <li>• "Поровну" автоматически распределяет продукты</li>
+                    <li>• Цветовая индикация: 🟢 = ОК, 🟡 = недозаполнено, 🔴 = перебор</li>
+                    <li>• Можно отправить итоги в любой мессенджер</li>
+                  </ul>
+                </div>
+
+                <div className="pt-4 border-t border-gray-200 text-center">
+                  <p className="text-xs text-gray-600 mb-2">Вопросы или предложения?</p>
+                  <a
+                    href="mailto:e@mailvladimir.ru?subject=Party Calculator - вопрос"
+                    onClick={handleEmailClick}
+                    className="text-indigo-600 hover:text-indigo-700 font-medium flex items-center justify-center gap-1 mx-auto"
+                  >
+                    <Mail className="w-4 h-4" />
+                    {emailCopied ? '✓ Скопировано!' : 'e@mailvladimir.ru'}
+                  </a>
+                  <p className="text-xs text-gray-500 mt-1">Разработчик: Владимир Васякин</p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowHelp(false)}
+                className="w-full mt-6 bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700"
+              >
+                Понятно
+              </button>
+            </div>
+          </div>
+        )}
 
         {showResetConfirm && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
