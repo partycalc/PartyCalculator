@@ -82,6 +82,24 @@
           const deleteParticipant = (id) => {
             if (!window.confirm('Удалить участника?')) return;
             setParticipants(participants.filter(p => p.id !== id));
+            const newConsumption = { ...consumption };
+            Object.keys(newConsumption).forEach(key => {
+              delete newConsumption[key][id];
+            });
+            setConsumption(newConsumption);
+          };
+
+          const startEditParticipant = (p) => {
+            setEditingParticipant({ id: p.id, name: p.name });
+          };
+
+          const saveEditParticipant = () => {
+            if (editingParticipant && editingParticipant.name.trim()) {
+              setParticipants(participants.map(p =>
+                p.id === editingParticipant.id ? { ...p, name: editingParticipant.name } : p
+              ));
+              setEditingParticipant(null);
+            }
           };
 
           const addPurchase = () => {
@@ -94,6 +112,22 @@
           const deletePurchase = (id) => {
             if (!window.confirm('Удалить покупку?')) return;
             setPurchases(purchases.filter(p => p.id !== id));
+            const newConsumption = { ...consumption };
+            delete newConsumption[id];
+            setConsumption(newConsumption);
+          };
+
+          const startEditPurchase = (p) => {
+            setEditingPurchase({ ...p });
+          };
+
+          const saveEditPurchase = () => {
+            if (editingPurchase) {
+              setPurchases(purchases.map(p =>
+                p.id === editingPurchase.id ? editingPurchase : p
+              ));
+              setEditingPurchase(null);
+            }
           };
 
           const updateConsumption = (purchaseId, participantId, value) => {
@@ -109,6 +143,17 @@
             else if (option === 'all') value = totalQuantity;
             else if (option.includes('/')) value = totalQuantity / parseInt(option.split('/')[1]);
             updateConsumption(purchaseId, participantId, value.toString());
+          };
+
+          // НОВАЯ ФУНКЦИЯ: Поровну на всех
+          const distributeEvenly = (purchaseId, totalQuantity) => {
+            const perPerson = totalQuantity / participants.length;
+            const newConsumption = { ...consumption };
+            newConsumption[purchaseId] = {};
+            participants.forEach(p => {
+              newConsumption[purchaseId][p.id] = perPerson;
+            });
+            setConsumption(newConsumption);
           };
 
           const groupPurchases = () => {
@@ -243,6 +288,29 @@
             return Object.entries(productTotals).sort(([, a], [, b]) => b - a).slice(0, 3);
           };
 
+          // НОВАЯ ФУНКЦИЯ: Получить баланс продукта (сколько распределено vs сколько куплено)
+          const getProductBalance = (purchaseId, totalQuantity) => {
+            const consumed = consumption[purchaseId] || {};
+            const totalConsumed = Object.values(consumed).reduce((sum, val) => sum + val, 0);
+            const diff = totalQuantity - totalConsumed;
+            
+            if (Math.abs(diff) < 0.01) return 'balanced'; // Идеально
+            if (diff > 0.01) return 'under'; // Недораспределено
+            return 'over'; // Перераспределено
+          };
+
+          const handleEmailClick = () => {
+            // Гибридный подход
+            try {
+              window.location.href = 'mailto:e@mailvladimir.ru?subject=Party Calculator - вопрос';
+            } catch (e) {
+              navigator.clipboard.writeText('e@mailvladimir.ru').then(() => {
+                setEmailCopied(true);
+                setTimeout(() => setEmailCopied(false), 2000);
+              });
+            }
+          };
+
           if (screen === 'splash') {
             return (
               <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center p-4">
@@ -355,11 +423,31 @@
                     </div>
                     <div className="space-y-2">
                       {participants.map((p) => (
-                        <div key={p.id} className="bg-white px-4 py-3 rounded-lg shadow-sm flex items-center justify-between">
-                          <span className="font-medium text-gray-800">{p.name}</span>
-                          <button onClick={() => deleteParticipant(p.id)} className="p-1 text-red-600 hover:bg-red-50 rounded">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                        <div key={p.id} className="bg-white px-4 py-3 rounded-lg shadow-sm">
+                          {editingParticipant?.id === p.id ? (
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={editingParticipant.name}
+                                onChange={(e) => setEditingParticipant({...editingParticipant, name: e.target.value})}
+                                className="flex-1 px-2 py-1 border border-gray-300 rounded"
+                              />
+                              <button onClick={saveEditParticipant} className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700">✓</button>
+                              <button onClick={() => setEditingParticipant(null)} className="px-3 py-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400">✕</button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-gray-800">{p.name}</span>
+                              <div className="flex gap-2">
+                                <button onClick={() => startEditParticipant(p)} className="p-1 text-blue-600 hover:bg-blue-50 rounded">
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => deleteParticipant(p.id)} className="p-1 text-red-600 hover:bg-red-50 rounded">
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -393,14 +481,35 @@
                         <div className="space-y-2">
                           {purchases.map((p) => (
                             <div key={p.id} className="bg-white px-4 py-3 rounded-lg shadow-sm">
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="font-medium text-gray-800">{p.product}</span>
-                                <button onClick={() => deletePurchase(p.id)} className="p-1 text-red-600 hover:bg-red-50 rounded">
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                              <div className="text-sm text-gray-600">{p.price}₽ × {p.quantity} = {(parseFloat(p.price) * parseFloat(p.quantity)).toFixed(2)}₽</div>
-                              <div className="text-xs text-gray-500">Купил: {p.buyer}</div>
+                              {editingPurchase?.id === p.id ? (
+                                <div className="space-y-2">
+                                  <input type="text" value={editingPurchase.product} onChange={(e) => setEditingPurchase({...editingPurchase, product: e.target.value})} className="w-full px-2 py-1 border border-gray-300 rounded" />
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <input type="number" step="0.01" value={editingPurchase.price} onChange={(e) => setEditingPurchase({...editingPurchase, price: e.target.value})} className="px-2 py-1 border border-gray-300 rounded" />
+                                    <input type="number" step="0.01" value={editingPurchase.quantity} onChange={(e) => setEditingPurchase({...editingPurchase, quantity: e.target.value})} className="px-2 py-1 border border-gray-300 rounded" />
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <button onClick={saveEditPurchase} className="flex-1 px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700">Сохранить</button>
+                                    <button onClick={() => setEditingPurchase(null)} className="flex-1 px-3 py-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400">Отмена</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div>
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="font-medium text-gray-800">{p.product}</span>
+                                    <div className="flex gap-2">
+                                      <button onClick={() => startEditPurchase(p)} className="p-1 text-blue-600 hover:bg-blue-50 rounded">
+                                        <Edit2 className="w-4 h-4" />
+                                      </button>
+                                      <button onClick={() => deletePurchase(p.id)} className="p-1 text-red-600 hover:bg-red-50 rounded">
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <div className="text-sm text-gray-600">{p.price}₽ × {p.quantity} = {(parseFloat(p.price) * parseFloat(p.quantity)).toFixed(2)}₽</div>
+                                  <div className="text-xs text-gray-500">Купил: {p.buyer}</div>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -427,27 +536,39 @@
                               </tr>
                             </thead>
                             <tbody>
-                              {groupPurchases().map(group => (
-                                <tr key={group.key} className="border-b">
-                                  <td className="p-2 font-medium">{group.product}<div className="text-xs text-gray-500">Всего: {group.totalQuantity.toFixed(2)}</div></td>
-                                  {participants.map(p => {
-                                    const value = consumption[group.key]?.[p.id] || 0;
-                                    return (
-                                      <td key={p.id} className="p-2">
-                                        <div className="flex flex-col gap-1 items-center">
-                                          <input type="number" step="0.01" placeholder="0" value={value > 0 ? String(value) : ''} onChange={(e) => updateConsumption(group.key, p.id, e.target.value)} className="w-20 px-2 py-1 border border-gray-300 rounded text-center" />
-                                          <select onChange={(e) => { if (e.target.value) { quickSet(group.key, p.id, e.target.value, group.totalQuantity); e.target.value = ''; }}} className="w-20 px-1 py-1 text-xs border border-gray-300 rounded">
-                                            <option value="">Доля</option>
-                                            <option value="0">Не ел</option>
-                                            {Array.from({ length: participants.length }, (_, i) => participants.length - i).map(d => <option key={d} value={`1/${d}`}>1/{d}</option>)}
-                                            <option value="all">Всё</option>
-                                          </select>
-                                        </div>
-                                      </td>
-                                    );
-                                  })}
-                                </tr>
-                              ))}
+                              {groupPurchases().map(group => {
+                                const balance = getProductBalance(group.key, group.totalQuantity);
+                                return (
+                                  <tr key={group.key} className={`border-b ${balance === 'balanced' ? 'bg-green-50' : balance === 'under' ? 'bg-yellow-50' : 'bg-red-50'}`}>
+                                    <td className="p-2 font-medium">
+                                      {group.product}
+                                      <div className="text-xs text-gray-500">Всего: {group.totalQuantity.toFixed(2)}</div>
+                                      <button 
+                                        onClick={() => distributeEvenly(group.key, group.totalQuantity)}
+                                        className="text-xs text-indigo-600 hover:underline mt-1"
+                                      >
+                                        ⚡ Поровну на всех
+                                      </button>
+                                    </td>
+                                    {participants.map(p => {
+                                      const value = consumption[group.key]?.[p.id] || 0;
+                                      return (
+                                        <td key={p.id} className="p-2">
+                                          <div className="flex flex-col gap-1 items-center">
+                                            <input type="number" step="0.01" placeholder="0" value={value > 0 ? String(value) : ''} onChange={(e) => updateConsumption(group.key, p.id, e.target.value)} className="w-20 px-2 py-1 border border-gray-300 rounded text-center" />
+                                            <select onChange={(e) => { if (e.target.value) { quickSet(group.key, p.id, e.target.value, group.totalQuantity); e.target.value = ''; }}} className="w-20 px-1 py-1 text-xs border border-gray-300 rounded">
+                                              <option value="">Доля</option>
+                                              <option value="0">Не ел</option>
+                                              {Array.from({ length: participants.length }, (_, i) => participants.length - i).map(d => <option key={d} value={`1/${d}`}>1/{d}</option>)}
+                                              <option value="all">Всё</option>
+                                            </select>
+                                          </div>
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
@@ -480,7 +601,7 @@
                               {group.items.map((item, itemIdx) => (
                                 <div key={item.id} className="text-sm text-gray-600 ml-4">Покупка #{itemIdx + 1}: {item.price}₽ × {item.quantity} = {(parseFloat(item.price) * parseFloat(item.quantity)).toFixed(2)}₽</div>
                               ))}
-                              <div className="text-sm font-bold text-indigo-600 ml-4 mt-1">Потратил: {group.totalPrice.toFixed(2)}₽</div>
+                              <div className="text-sm font-bold text-indigo-600 ml-4 mt-1">Купил: {group.items[0].buyer} - {group.totalPrice.toFixed(2)}₽</div>
                             </div>
                           ))}
                         </div>
@@ -498,7 +619,7 @@
                       </div>
                     ) : settlements.length === 0 ? (
                       <div className="text-center py-8">
-                        <button onClick={calculateSettlements} className="bg-indigo-600 text-white px-8 py-3 rounded-xl hover:bg-indigo-700 font-semibold">
+                        <button onClick={() => { const result = calculateSettlements(); }} className="bg-indigo-600 text-white px-8 py-3 rounded-xl hover:bg-indigo-700 font-semibold">
                           Рассчитать переводы
                         </button>
                       </div>
@@ -598,7 +719,7 @@
                       </div>
                       <div className="pt-4 border-t border-gray-200 text-center">
                         <p className="text-gray-600 mb-2">Разработчик: Владимир Васякин</p>
-                        <button onClick={() => { navigator.clipboard.writeText('e@mailvladimir.ru'); setEmailCopied(true); setTimeout(() => setEmailCopied(false), 2000); }} className="text-indigo-600 hover:text-indigo-700 flex items-center justify-center gap-1 mx-auto">
+                        <button onClick={handleEmailClick} className="text-indigo-600 hover:text-indigo-700 flex items-center justify-center gap-1 mx-auto">
                           <Copy className="w-4 h-4" />
                           {emailCopied ? '✓ Скопировано!' : 'e@mailvladimir.ru'}
                         </button>
