@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Share2, Users, Plus, Calculator, Send, CheckCircle, Clock, XCircle, ShoppingCart, Trash2, Edit2, RotateCcw, Mail } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Share2, Users, Plus, Calculator, CheckCircle, Clock, XCircle, ShoppingCart, Trash2, Edit2, RotateCcw, Mail, HelpCircle, TrendingUp, TrendingDown } from 'lucide-react';
 
 const PartyCalculator = () => {
   const [screen, setScreen] = useState('main');
@@ -7,41 +7,39 @@ const PartyCalculator = () => {
   const [eventName, setEventName] = useState('');
   const [participants, setParticipants] = useState([]);
   const [purchases, setPurchases] = useState([]);
-  const [newParticipant, setNewParticipant] = useState('');
+  const [consumption, setConsumption] = useState({});
+  const [newParticipant, setNewParticipant] = useState({ name: '', phone: '' });
   const [editingParticipant, setEditingParticipant] = useState(null);
   const [editingPurchase, setEditingPurchase] = useState(null);
   const [newPurchase, setNewPurchase] = useState({
     product: '',
     price: '',
     quantity: '',
-    buyer: '',
-    consumers: []
+    buyer: ''
   });
   const [settlements, setSettlements] = useState([]);
   const [paymentStatuses, setPaymentStatuses] = useState({});
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-  // Сброс всего
   const resetAll = () => {
     setScreen('main');
     setActiveTab('participants');
     setEventName('');
     setParticipants([]);
     setPurchases([]);
-    setNewParticipant('');
+    setConsumption({});
+    setNewParticipant({ name: '', phone: '' });
     setNewPurchase({
       product: '',
       price: '',
       quantity: '',
-      buyer: '',
-      consumers: []
+      buyer: ''
     });
     setSettlements([]);
     setPaymentStatuses({});
     setShowResetConfirm(false);
   };
 
-  // Создание мероприятия
   const createEvent = () => {
     if (eventName.trim()) {
       setScreen('tabs');
@@ -49,40 +47,33 @@ const PartyCalculator = () => {
     }
   };
 
-  // Добавление участника
   const addParticipant = () => {
-    if (newParticipant.trim() && !participants.includes(newParticipant)) {
-      setParticipants([...participants, newParticipant]);
-      setNewParticipant('');
+    if (newParticipant.name.trim() && !participants.find(p => p.name === newParticipant.name)) {
+      setParticipants([...participants, { ...newParticipant, id: Date.now() }]);
+      setNewParticipant({ name: '', phone: '' });
     }
   };
 
-  // Удаление участника
-  const deleteParticipant = (index) => {
-    setParticipants(participants.filter((_, idx) => idx !== index));
+  const deleteParticipant = (id) => {
+    if (!window.confirm('Удалить участника?')) return;
+    setParticipants(participants.filter(p => p.id !== id));
   };
 
-  // Редактирование участника
-  const startEditParticipant = (index) => {
-    setEditingParticipant({ index, name: participants[index] });
+  const startEditParticipant = (participant) => {
+    setEditingParticipant({ ...participant });
   };
 
   const saveEditParticipant = () => {
     if (editingParticipant && editingParticipant.name.trim()) {
-      const newParticipants = [...participants];
-      newParticipants[editingParticipant.index] = editingParticipant.name;
-      setParticipants(newParticipants);
+      setParticipants(participants.map(p => 
+        p.id === editingParticipant.id ? editingParticipant : p
+      ));
       setEditingParticipant(null);
     }
   };
 
-  // Добавление покупки
   const addPurchase = () => {
     if (newPurchase.product && newPurchase.price && newPurchase.quantity && newPurchase.buyer) {
-      const consumers = newPurchase.consumers.length > 0 
-        ? newPurchase.consumers 
-        : participants;
-      
       const price = parseFloat(newPurchase.price);
       const quantity = parseFloat(newPurchase.quantity);
       const total = price * quantity;
@@ -92,7 +83,6 @@ const PartyCalculator = () => {
         price,
         quantity,
         total,
-        consumers,
         id: Date.now()
       }]);
       
@@ -100,18 +90,16 @@ const PartyCalculator = () => {
         product: '',
         price: '',
         quantity: '',
-        buyer: '',
-        consumers: []
+        buyer: ''
       });
     }
   };
 
-  // Удаление покупки
   const deletePurchase = (id) => {
+    if (!window.confirm('Удалить покупку?')) return;
     setPurchases(purchases.filter(p => p.id !== id));
   };
 
-  // Редактирование покупки
   const startEditPurchase = (purchase) => {
     setEditingPurchase({...purchase});
   };
@@ -131,69 +119,199 @@ const PartyCalculator = () => {
     }
   };
 
-  // Переключение потребителя
-  const toggleConsumer = (person) => {
-    const current = newPurchase.consumers;
-    if (current.includes(person)) {
-      setNewPurchase({
-        ...newPurchase,
-        consumers: current.filter(p => p !== person)
-      });
-    } else {
-      setNewPurchase({
-        ...newPurchase,
-        consumers: [...current, person]
-      });
-    }
-  };
-
-  // Группировка продуктов для таблицы потребления
-  const getConsumptionTable = () => {
-    const productGroups = {};
-    
-    purchases.forEach(purchase => {
-      const key = purchase.product;
-      if (!productGroups[key]) {
-        productGroups[key] = [];
-      }
-      productGroups[key].push(purchase);
-    });
-
-    return productGroups;
-  };
-
-  // Проверка, есть ли продукты с одинаковым названием но разной ценой
-  const hasDuplicateProductNames = () => {
-    const productPrices = {};
+  // Группировка покупок по продукту + цена
+  const getGroupedPurchases = () => {
+    const groups = {};
     purchases.forEach(p => {
-      if (!productPrices[p.product]) {
-        productPrices[p.product] = new Set();
+      const key = `${p.product}-${p.price}`;
+      if (!groups[key]) {
+        groups[key] = {
+          key,
+          product: p.product,
+          price: p.price,
+          totalQuantity: 0,
+          purchases: []
+        };
       }
-      productPrices[p.product].add(p.price);
+      groups[key].totalQuantity += p.quantity;
+      groups[key].purchases.push(p);
+    });
+    return Object.values(groups);
+  };
+
+  // Проверка дубликатов названий
+  const getProductDuplicates = () => {
+    const map = {};
+    purchases.forEach(p => {
+      if (!map[p.product]) map[p.product] = new Set();
+      map[p.product].add(p.price);
+    });
+    const result = {};
+    Object.keys(map).forEach(name => {
+      result[name] = map[name].size;
+    });
+    return result;
+  };
+
+  // Обновление потребления
+  const updateConsumption = (groupKey, participantId, value) => {
+    const val = parseFloat(value);
+    setConsumption({
+      ...consumption,
+      [`${groupKey}-${participantId}`]: isNaN(val) ? 0 : val
+    });
+  };
+
+  // Быстрая установка долей
+  const quickSet = (groupKey, participantId, fraction, totalQty) => {
+    let val = 0;
+    if (fraction === '0') {
+      val = 0;
+    } else if (fraction === 'all') {
+      val = totalQty;
+    } else if (fraction.includes('/')) {
+      const [n, d] = fraction.split('/').map(parseFloat);
+      const already = participants.reduce((sum, p) => {
+        if (p.id === participantId) return sum;
+        return sum + (consumption[`${groupKey}-${p.id}`] || 0);
+      }, 0);
+      const remaining = totalQty - already;
+      const exact = totalQty * n / d;
+      val = Math.min(remaining, Math.round(exact * 100) / 100);
+    }
+    setConsumption({
+      ...consumption,
+      [`${groupKey}-${participantId}`]: val
+    });
+  };
+
+  // Распределить один продукт поровну
+  const autoDistributeProduct = (groupKey) => {
+    const group = getGroupedPurchases().find(g => g.key === groupKey);
+    if (!group) return;
+    
+    const cnt = participants.length;
+    const per = group.totalQuantity / cnt;
+    let distributed = 0;
+    
+    const newConsumption = { ...consumption };
+    participants.forEach((p, i) => {
+      if (i === cnt - 1) {
+        newConsumption[`${groupKey}-${p.id}`] = Math.round((group.totalQuantity - distributed) * 100) / 100;
+      } else {
+        const share = Math.round(per * 100) / 100;
+        newConsumption[`${groupKey}-${p.id}`] = share;
+        distributed += share;
+      }
+    });
+    setConsumption(newConsumption);
+  };
+
+  // Распределить все поровну
+  const autoDistributeAll = () => {
+    if (!window.confirm('Распределить все продукты поровну?')) return;
+    
+    const groups = getGroupedPurchases();
+    const cnt = participants.length;
+    const newConsumption = {};
+    
+    groups.forEach(group => {
+      const per = group.totalQuantity / cnt;
+      let distributed = 0;
+      
+      participants.forEach((p, i) => {
+        if (i === cnt - 1) {
+          newConsumption[`${group.key}-${p.id}`] = Math.round((group.totalQuantity - distributed) * 100) / 100;
+        } else {
+          const share = Math.round(per * 100) / 100;
+          newConsumption[`${group.key}-${p.id}`] = share;
+          distributed += share;
+        }
+      });
     });
     
-    return Object.keys(productPrices).some(product => productPrices[product].size > 1);
+    setConsumption(newConsumption);
+  };
+
+  // Очистить таблицу потребления
+  const clearConsumption = () => {
+    if (!window.confirm('Очистить таблицу потребления?')) return;
+    setConsumption({});
+  };
+
+  // Статус баланса продукта
+  const getConsumptionStatus = (groupKey) => {
+    const group = getGroupedPurchases().find(g => g.key === groupKey);
+    if (!group) return { filled: 0, total: 0, percent: 0, status: 'warn' };
+    
+    const filled = participants.reduce((sum, p) => {
+      return sum + (consumption[`${groupKey}-${p.id}`] || 0);
+    }, 0);
+    
+    const total = group.totalQuantity;
+    const percent = (filled / total) * 100;
+    
+    let status = 'warn';
+    if (percent > 100.5) status = 'error';
+    else if (percent >= 99.5 && percent <= 100.5) status = 'ok';
+    else status = 'warn';
+    
+    return {
+      filled: Math.round(filled * 100) / 100,
+      total,
+      percent,
+      status
+    };
+  };
+
+  // Детализация покупок
+  const getPurchaseDetails = () => {
+    const details = {};
+    participants.forEach(p => {
+      details[p.name] = { spent: 0, purchases: [] };
+    });
+
+    purchases.forEach(purchase => {
+      if (details[purchase.buyer]) {
+        details[purchase.buyer].spent += purchase.total;
+        details[purchase.buyer].purchases.push({
+          product: purchase.product,
+          price: purchase.price,
+          quantity: purchase.quantity,
+          total: purchase.total
+        });
+      }
+    });
+
+    return details;
   };
 
   // Расчёт балансов
   const calculateBalances = () => {
     const balances = {};
-    participants.forEach(p => balances[p] = 0);
+    participants.forEach(p => {
+      balances[p.name] = { spent: 0, owes: 0 };
+    });
 
+    // Кто сколько потратил
     purchases.forEach(purchase => {
-      const shareAmount = purchase.total / purchase.consumers.length;
-      
-      balances[purchase.buyer] += purchase.total;
-      
-      purchase.consumers.forEach(person => {
-        balances[person] -= shareAmount;
+      balances[purchase.buyer].spent += purchase.total;
+    });
+
+    // Кто сколько должен
+    const groups = getGroupedPurchases();
+    groups.forEach(group => {
+      participants.forEach(p => {
+        const consumed = consumption[`${group.key}-${p.id}`] || 0;
+        balances[p.name].owes += consumed * group.price;
       });
     });
 
     const debts = [];
     const creditors = [];
     
-    Object.entries(balances).forEach(([person, balance]) => {
+    Object.entries(balances).forEach(([person, data]) => {
+      const balance = data.spent - data.owes;
       if (balance < -0.01) debts.push({ person, amount: -balance });
       if (balance > 0.01) creditors.push({ person, amount: balance });
     });
@@ -235,7 +353,6 @@ const PartyCalculator = () => {
     setActiveTab('settlement');
   };
 
-  // Генерация текста для отправки
   const generateShareText = () => {
     let text = `💰 Итоговый расчёт "${eventName}"\n\n`;
     
@@ -248,7 +365,6 @@ const PartyCalculator = () => {
     return text;
   };
 
-  // Генерация ссылок для мессенджеров
   const shareToMessenger = (platform) => {
     const text = encodeURIComponent(generateShareText());
     const links = {
@@ -261,18 +377,48 @@ const PartyCalculator = () => {
     window.open(links[platform], '_blank');
   };
 
-  // Генерация ссылки для оплаты
   const generatePaymentLink = (transaction) => {
+    const receiver = participants.find(p => p.name === transaction.to);
+    const phone = receiver?.phone || '';
     const comment = encodeURIComponent(`${eventName} - расчёт`);
+    
+    if (phone) {
+      return `https://qr.nspk.ru/m?bank=100000000111&sum=${transaction.amount}&phone=${phone}&comment=${comment}`;
+    }
     return `https://qr.nspk.ru/?amount=${transaction.amount}&comment=${comment}`;
   };
 
-  // Изменение статуса оплаты
   const updatePaymentStatus = (transactionId, status) => {
     setPaymentStatuses({...paymentStatuses, [transactionId]: status});
   };
 
-  // Главный экран
+  // Результаты для отображения
+  const getResults = () => {
+    const balances = {};
+    participants.forEach(p => {
+      balances[p.name] = { spent: 0, owes: 0 };
+    });
+
+    purchases.forEach(purchase => {
+      balances[purchase.buyer].spent += purchase.total;
+    });
+
+    const groups = getGroupedPurchases();
+    groups.forEach(group => {
+      participants.forEach(p => {
+        const consumed = consumption[`${group.key}-${p.id}`] || 0;
+        balances[p.name].owes += consumed * group.price;
+      });
+    });
+
+    return Object.entries(balances).map(([name, data]) => ({
+      name,
+      spent: data.spent,
+      owes: data.owes,
+      balance: data.spent - data.owes
+    }));
+  };
+
   if (screen === 'main') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
@@ -321,20 +467,24 @@ const PartyCalculator = () => {
     );
   }
 
-  // Экран с вкладками
   if (screen === 'tabs') {
     const tabs = [
       { id: 'participants', label: 'Участники', icon: Users },
       { id: 'purchases', label: 'Покупки', icon: ShoppingCart },
       { id: 'consumption', label: 'Потребление', icon: Calculator },
-      { id: 'settlement', label: 'Расчёты', icon: CheckCircle }
+      { id: 'settlement', label: 'Расчёты', icon: CheckCircle },
+      { id: 'help', label: 'Помощь', icon: HelpCircle }
     ];
+
+    const purchaseDetails = getPurchaseDetails();
+    const results = getResults();
+    const groups = getGroupedPurchases();
+    const duplicates = getProductDuplicates();
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 pb-20">
-        <div className="max-w-md mx-auto mt-6">
+        <div className="max-w-4xl mx-auto mt-6">
           <div className="bg-white rounded-t-2xl shadow-xl">
-            {/* Хедер */}
             <div className="p-4 border-b border-gray-200 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-gray-800">{eventName}</h2>
@@ -349,7 +499,6 @@ const PartyCalculator = () => {
               </button>
             </div>
 
-            {/* Табы */}
             <div className="flex border-b border-gray-200 overflow-x-auto">
               {tabs.map(tab => {
                 const Icon = tab.icon;
@@ -357,7 +506,7 @@ const PartyCalculator = () => {
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`flex-1 min-w-max px-4 py-3 font-medium text-sm flex items-center justify-center gap-2 transition ${
+                    className={`flex-1 min-w-max px-3 py-3 font-medium text-xs flex items-center justify-center gap-1 transition ${
                       activeTab === tab.id
                         ? 'text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50'
                         : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
@@ -370,74 +519,87 @@ const PartyCalculator = () => {
               })}
             </div>
 
-            {/* Контент вкладок */}
-            <div className="p-4">
-              {/* Участники */}
+            <div className="p-4 max-h-[70vh] overflow-y-auto">
               {activeTab === 'participants' && (
                 <div>
-                  <div className="flex gap-2 mb-4">
+                  <div className="space-y-2 mb-4">
                     <input
                       type="text"
                       placeholder="Имя участника"
-                      value={newParticipant}
-                      onChange={(e) => setNewParticipant(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && addParticipant()}
-                      className="flex-1 px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none"
+                      value={newParticipant.name}
+                      onChange={(e) => setNewParticipant({...newParticipant, name: e.target.value})}
+                      className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none"
+                    />
+                    <input
+                      type="tel"
+                      placeholder="Телефон для СБП (необязательно)"
+                      value={newParticipant.phone}
+                      onChange={(e) => setNewParticipant({...newParticipant, phone: e.target.value})}
+                      className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none"
                     />
                     <button
                       onClick={addParticipant}
-                      className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+                      className="w-full bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center justify-center gap-2"
                     >
                       <Plus className="w-5 h-5" />
+                      Добавить участника
                     </button>
                   </div>
 
                   <div className="space-y-2">
-                    {participants.map((p, i) => (
-                      <div key={i} className="flex items-center justify-between bg-gray-50 px-4 py-3 rounded-lg">
-                        {editingParticipant?.index === i ? (
-                          <>
+                    {participants.map((p) => (
+                      <div key={p.id} className="bg-gray-50 px-4 py-3 rounded-lg">
+                        {editingParticipant?.id === p.id ? (
+                          <div className="space-y-2">
                             <input
                               type="text"
                               value={editingParticipant.name}
                               onChange={(e) => setEditingParticipant({...editingParticipant, name: e.target.value})}
-                              onKeyPress={(e) => e.key === 'Enter' && saveEditParticipant()}
-                              className="flex-1 px-2 py-1 border-2 border-indigo-500 rounded focus:outline-none"
-                              autoFocus
+                              className="w-full px-2 py-1 border-2 border-indigo-500 rounded focus:outline-none"
                             />
-                            <div className="flex gap-2 ml-2">
+                            <input
+                              type="tel"
+                              value={editingParticipant.phone || ''}
+                              onChange={(e) => setEditingParticipant({...editingParticipant, phone: e.target.value})}
+                              placeholder="Телефон для СБП"
+                              className="w-full px-2 py-1 border-2 border-indigo-500 rounded focus:outline-none"
+                            />
+                            <div className="flex gap-2">
                               <button
                                 onClick={saveEditParticipant}
-                                className="text-green-600 hover:text-green-700"
+                                className="flex-1 bg-green-600 text-white py-1 rounded text-sm"
                               >
-                                ✓
+                                Сохранить
                               </button>
                               <button
                                 onClick={() => setEditingParticipant(null)}
-                                className="text-red-500 hover:text-red-700"
+                                className="flex-1 bg-gray-300 text-gray-700 py-1 rounded text-sm"
                               >
-                                ✕
+                                Отмена
                               </button>
                             </div>
-                          </>
+                          </div>
                         ) : (
-                          <>
-                            <span className="font-medium text-gray-700">{p}</span>
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <span className="font-medium text-gray-700">{p.name}</span>
+                              {p.phone && <p className="text-xs text-gray-500">{p.phone}</p>}
+                            </div>
                             <div className="flex gap-2">
                               <button
-                                onClick={() => startEditParticipant(i)}
+                                onClick={() => startEditParticipant(p)}
                                 className="text-indigo-500 hover:text-indigo-700"
                               >
                                 <Edit2 className="w-4 h-4" />
                               </button>
                               <button
-                                onClick={() => deleteParticipant(i)}
+                                onClick={() => deleteParticipant(p.id)}
                                 className="text-red-500 hover:text-red-700"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
-                          </>
+                          </div>
                         )}
                       </div>
                     ))}
@@ -451,7 +613,6 @@ const PartyCalculator = () => {
                 </div>
               )}
 
-              {/* Покупки */}
               {activeTab === 'purchases' && (
                 <div>
                   {participants.length < 2 ? (
@@ -461,7 +622,6 @@ const PartyCalculator = () => {
                     </div>
                   ) : (
                     <>
-                      {/* Форма добавления */}
                       <div className="bg-indigo-50 p-4 rounded-lg mb-4">
                         <h3 className="font-semibold text-gray-700 mb-3">Новая покупка</h3>
                         <div className="space-y-2">
@@ -506,35 +666,9 @@ const PartyCalculator = () => {
                           >
                             <option value="">Кто купил?</option>
                             {participants.map(p => (
-                              <option key={p} value={p}>{p}</option>
+                              <option key={p.id} value={p.name}>{p.name}</option>
                             ))}
                           </select>
-
-                          <div>
-                            <p className="text-sm font-medium text-gray-700 mb-2">Кто потребляет:</p>
-                            <div className="bg-white rounded-lg p-2 space-y-1">
-                              <label className="flex items-center gap-2 cursor-pointer p-1">
-                                <input
-                                  type="checkbox"
-                                  checked={newPurchase.consumers.length === 0}
-                                  onChange={() => setNewPurchase({...newPurchase, consumers: []})}
-                                  className="w-4 h-4"
-                                />
-                                <span className="text-sm text-gray-700">Все участники</span>
-                              </label>
-                              {participants.map(p => (
-                                <label key={p} className="flex items-center gap-2 cursor-pointer p-1">
-                                  <input
-                                    type="checkbox"
-                                    checked={newPurchase.consumers.includes(p)}
-                                    onChange={() => toggleConsumer(p)}
-                                    className="w-4 h-4"
-                                  />
-                                  <span className="text-sm text-gray-700">{p}</span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
 
                           <button
                             onClick={addPurchase}
@@ -546,8 +680,29 @@ const PartyCalculator = () => {
                         </div>
                       </div>
 
-                      {/* Список покупок */}
+                      {purchases.length > 0 && (
+                        <div className="mb-4">
+                          <h3 className="font-semibold text-gray-700 mb-3">📦 Детализация покупок</h3>
+                          {Object.entries(purchaseDetails).map(([person, data]) => (
+                            data.purchases.length > 0 && (
+                              <div key={person} className="bg-gray-50 p-3 rounded-lg mb-2">
+                                <p className="font-medium text-gray-800">{person} 🧑</p>
+                                {data.purchases.map((p, i) => (
+                                  <p key={i} className="text-xs text-gray-600">
+                                    {p.product}: {p.price}₽ × {p.quantity} = {p.total.toFixed(2)}₽
+                                  </p>
+                                ))}
+                                <p className="text-sm font-bold text-indigo-600 mt-1">
+                                  Потратил: {data.spent.toFixed(2)}₽
+                                </p>
+                              </div>
+                            )
+                          ))}
+                        </div>
+                      )}
+
                       <div className="space-y-2">
+                        <h3 className="font-semibold text-gray-700">Все покупки</h3>
                         {purchases.map((purchase) => (
                           <div key={purchase.id} className="bg-gray-50 p-3 rounded-lg">
                             {editingPurchase?.id === purchase.id ? (
@@ -612,9 +767,6 @@ const PartyCalculator = () => {
                                     </button>
                                   </div>
                                 </div>
-                                <p className="text-xs text-gray-500">
-                                  Потребители: {purchase.consumers.join(', ')}
-                                </p>
                               </>
                             )}
                           </div>
@@ -631,7 +783,6 @@ const PartyCalculator = () => {
                 </div>
               )}
 
-              {/* Потребление */}
               {activeTab === 'consumption' && (
                 <div>
                   {purchases.length === 0 ? (
@@ -640,54 +791,123 @@ const PartyCalculator = () => {
                       <p>Сначала добавьте покупки</p>
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b-2 border-gray-300">
-                            <th className="text-left p-2 font-semibold text-gray-700">Участник</th>
-                            {Object.entries(getConsumptionTable()).map(([product, items]) => {
-                              const showPrice = items.length > 1 || 
-                                purchases.filter(p => p.product === product).length > items.length;
-                              return items.map((item, idx) => (
-                                <th key={`${product}-${idx}`} className="text-center p-2 font-semibold text-gray-700">
-                                  <div>{product}</div>
-                                  {showPrice && (
-                                    <div className="text-xs text-gray-500 font-normal">
-                                      ({item.price}₽)
+                    <>
+                      <div className="bg-gray-100 p-3 rounded-lg mb-4">
+                        <h3 className="font-semibold text-gray-700 mb-2">Быстрое распределение</h3>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={autoDistributeAll}
+                            className="flex-1 bg-indigo-600 text-white py-2 px-3 rounded-lg text-sm font-semibold hover:bg-indigo-700"
+                          >
+                            Всё поровну
+                          </button>
+                          <button
+                            onClick={clearConsumption}
+                            className="flex-1 bg-gray-300 text-gray-700 py-2 px-3 rounded-lg text-sm font-semibold hover:bg-gray-400"
+                          >
+                            Очистить всё
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm border-collapse">
+                          <thead>
+                            <tr className="border-b-2 border-gray-300">
+                              <th className="sticky left-0 z-10 bg-white p-2 text-left font-semibold text-gray-700 border-r border-gray-200">
+                                Участник
+                              </th>
+                              {groups.map(group => {
+                                const status = getConsumptionStatus(group.key);
+                                const showPrice = (duplicates[group.product] || 0) > 1;
+                                
+                                return (
+                                  <th key={group.key} className="p-2 text-center min-w-[200px]">
+                                    <div className="space-y-1">
+                                      <div className="font-semibold text-gray-800">
+                                        {group.product}
+                                        {showPrice && (
+                                          <div className="text-xs text-gray-500 font-normal">
+                                            ({group.price}₽)
+                                          </div>
+                                        )}
+                                      </div>
+                                      <button
+                                        onClick={() => autoDistributeProduct(group.key)}
+                                        className="text-xs bg-gray-200 hover:bg-gray-300 px-2 py-1 rounded"
+                                      >
+                                        Поровну
+                                      </button>
+                                      <div className={`text-xs font-bold ${
+                                        status.status === 'ok' ? 'text-green-600' :
+                                        status.status === 'error' ? 'text-red-600' :
+                                        'text-yellow-600'
+                                      }`}>
+                                        {status.status === 'ok' && '✓'}
+                                        {status.status === 'error' && '⚠'}
+                                        {status.status === 'warn' && '⚠'}
+                                        {' '}{status.filled} / {status.total} шт
+                                        {status.status === 'error' && ' (перебор!)'}
+                                        {status.status === 'warn' && status.filled > 0 && ' (недозаполнено)'}
+                                      </div>
                                     </div>
-                                  )}
-                                </th>
-                              ));
-                            })}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {participants.map(person => (
-                            <tr key={person} className="border-b border-gray-200">
-                              <td className="p-2 font-medium text-gray-700">{person}</td>
-                              {Object.values(getConsumptionTable()).flatMap(items => 
-                                items.map((item, idx) => (
-                                  <td key={`${item.id}-${idx}`} className="text-center p-2">
-                                    {item.consumers.includes(person) ? (
-                                      <span className="inline-block bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-medium">
-                                        ✓
-                                      </span>
-                                    ) : (
-                                      <span className="text-gray-300">—</span>
-                                    )}
-                                  </td>
-                                ))
-                              )}
+                                  </th>
+                                );
+                              })}
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                          </thead>
+                          <tbody>
+                            {participants.map(p => (
+                              <tr key={p.id} className="border-b border-gray-200">
+                                <td className="sticky left-0 z-10 bg-white p-2 font-semibold text-gray-700 border-r border-gray-200">
+                                  {p.name}
+                                </td>
+                                {groups.map(group => {
+                                  const key = `${group.key}-${p.id}`;
+                                  const value = consumption[key] || 0;
+                                  const displayValue = value ? String(value) : '';
+                                  
+                                  return (
+                                    <td key={group.key} className="p-2">
+                                      <div className="flex flex-col gap-1 items-center">
+                                        <input
+                                          type="number"
+                                          inputMode="decimal"
+                                          placeholder="0"
+                                          value={displayValue}
+                                          onChange={(e) => updateConsumption(group.key, p.id, e.target.value)}
+                                          className="w-20 px-2 py-1 border border-gray-300 rounded text-center"
+                                        />
+                                        <select
+                                          onChange={(e) => {
+                                            if (e.target.value) {
+                                              quickSet(group.key, p.id, e.target.value, group.totalQuantity);
+                                              e.target.value = '';
+                                            }
+                                          }}
+                                          className="w-20 px-1 py-1 text-xs border border-gray-300 rounded"
+                                        >
+                                          <option value="">Доля</option>
+                                          <option value="0">Не ел</option>
+                                          {Array.from({ length: participants.length }, (_, i) => participants.length - i).map(d => (
+                                            <option key={d} value={`1/${d}`}>1/{d}</option>
+                                          ))}
+                                          <option value="all">Всё</option>
+                                        </select>
+                                      </div>
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
                   )}
                 </div>
               )}
 
-              {/* Расчёты */}
               {activeTab === 'settlement' && (
                 <div>
                   {purchases.length === 0 ? (
@@ -707,77 +927,141 @@ const PartyCalculator = () => {
                     </div>
                   ) : (
                     <>
-                      <div className="space-y-3 mb-6">
-                        {settlements.map((transaction) => {
-                          const status = paymentStatuses[transaction.id];
-                          const statusConfig = {
-                            unpaid: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-50', text: 'Не оплачено' },
-                            pending: { icon: Clock, color: 'text-yellow-500', bg: 'bg-yellow-50', text: 'Ожидает подтверждения' },
-                            paid: { icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-50', text: 'Оплачено' }
-                          }[status];
+                      <div className="mb-6">
+                        <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                          💰 Баланс расчётов
+                        </h3>
+                        {results.map(res => {
+                          const isOverpaid = res.balance > 0.01;
+                          const isUnderpaid = res.balance < -0.01;
                           
-                          const StatusIcon = statusConfig.icon;
-
                           return (
-                            <div key={transaction.id} className={`${statusConfig.bg} p-4 rounded-lg border-2 ${status === 'paid' ? 'border-green-200' : 'border-transparent'}`}>
-                              <div className="flex items-center justify-between mb-3">
+                            <div key={res.name} className={`p-3 rounded-lg mb-2 ${
+                              isOverpaid ? 'bg-green-50 border-2 border-green-200' : 
+                              isUnderpaid ? 'bg-red-50 border-2 border-red-200' : 
+                              'bg-gray-50'
+                            }`}>
+                              <div className="flex items-center justify-between">
                                 <div>
-                                  <p className="font-semibold text-gray-800">
-                                    {transaction.from} → {transaction.to}
+                                  <p className="font-medium text-gray-800">{res.name}</p>
+                                  <p className="text-xs text-gray-600">
+                                    Потратил: {res.spent.toFixed(2)}₽ | Должен был: {res.owes.toFixed(2)}₽
                                   </p>
-                                  <p className="text-2xl font-bold text-indigo-600">{transaction.amount}₽</p>
                                 </div>
-                                <StatusIcon className={`w-8 h-8 ${statusConfig.color}`} />
+                                <div className="text-right">
+                                  {isOverpaid && (
+                                    <div className="flex items-center gap-1 text-green-600">
+                                      <TrendingUp className="w-4 h-4" />
+                                      <span className="font-bold">+{res.balance.toFixed(2)}₽</span>
+                                    </div>
+                                  )}
+                                  {isUnderpaid && (
+                                    <div className="flex items-center gap-1 text-red-600">
+                                      <TrendingDown className="w-4 h-4" />
+                                      <span className="font-bold">{res.balance.toFixed(2)}₽</span>
+                                    </div>
+                                  )}
+                                  {!isOverpaid && !isUnderpaid && (
+                                    <span className="text-gray-500 text-sm">Баланс 0₽</span>
+                                  )}
+                                </div>
                               </div>
-                              
-                              <div className="flex gap-2">
-                                {status === 'unpaid' && (
-                                  <>
-                                    <button
-                                      onClick={() => {
-                                        const link = generatePaymentLink(transaction);
-                                        window.open(link, '_blank');
-                                        updatePaymentStatus(transaction.id, 'pending');
-                                      }}
-                                      className="flex-1 bg-indigo-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700"
-                                    >
-                                      Оплатить через СБП
-                                    </button>
-                                    <button
-                                      onClick={() => updatePaymentStatus(transaction.id, 'paid')}
-                                      className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg text-sm font-semibold hover:bg-gray-300"
-                                    >
-                                      Уже оплатил
-                                    </button>
-                                  </>
-                                )}
-                                
-                                {status === 'pending' && (
-                                  <>
-                                    <button
-                                      onClick={() => updatePaymentStatus(transaction.id, 'paid')}
-                                      className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-green-700"
-                                    >
-                                      ✓ Подтвердить
-                                    </button>
-                                    <button
-                                      onClick={() => updatePaymentStatus(transaction.id, 'unpaid')}
-                                      className="flex-1 bg-red-100 text-red-700 py-2 rounded-lg text-sm font-semibold hover:bg-red-200"
-                                    >
-                                      ✗ Не получил
-                                    </button>
-                                  </>
-                                )}
-                                
-                                {status === 'paid' && (
-                                  <div className="w-full text-center text-green-700 font-semibold py-2">
-                                    ✓ Оплата подтверждена
-                                  </div>
-                                )}
-                              </div>
+                              <p className="text-xs text-gray-500 mt-1">
+                                {isOverpaid && '✅ Переплатил - ему вернут'}
+                                {isUnderpaid && '❌ Недоплатил - должен доплатить'}
+                                {!isOverpaid && !isUnderpaid && '✓ Всё оплачено'}
+                              </p>
                             </div>
                           );
                         })}
+                      </div>
+
+                      <div className="mb-6">
+                        <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                          🎯 Итоговые переводы
+                        </h3>
+                        <div className="space-y-3">
+                          {settlements.map((transaction) => {
+                            const status = paymentStatuses[transaction.id];
+                            const statusConfig = {
+                              unpaid: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-50', text: 'Не оплачено' },
+                              pending: { icon: Clock, color: 'text-yellow-500', bg: 'bg-yellow-50', text: 'Ожидает подтверждения' },
+                              paid: { icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-50', text: 'Оплачено' }
+                            }[status];
+                            
+                            const StatusIcon = statusConfig.icon;
+                            const receiver = participants.find(p => p.name === transaction.to);
+
+                            return (
+                              <div key={transaction.id} className={`${statusConfig.bg} p-4 rounded-lg border-2 ${status === 'paid' ? 'border-green-200' : 'border-transparent'}`}>
+                                <div className="flex items-center justify-between mb-3">
+                                  <div>
+                                    <p className="font-semibold text-gray-800">
+                                      {transaction.from} → {transaction.to}
+                                    </p>
+                                    <p className="text-2xl font-bold text-indigo-600">{transaction.amount}₽</p>
+                                    {receiver?.phone && (
+                                      <p className="text-xs text-gray-500">СБП: {receiver.phone}</p>
+                                    )}
+                                  </div>
+                                  <StatusIcon className={`w-8 h-8 ${statusConfig.color}`} />
+                                </div>
+                                
+                                <div className="flex gap-2">
+                                  {status === 'unpaid' && (
+                                    <>
+                                      {receiver?.phone ? (
+                                        <button
+                                          onClick={() => {
+                                            const link = generatePaymentLink(transaction);
+                                            window.open(link, '_blank');
+                                            updatePaymentStatus(transaction.id, 'pending');
+                                          }}
+                                          className="flex-1 bg-indigo-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700"
+                                        >
+                                          Оплатить через СБП
+                                        </button>
+                                      ) : (
+                                        <div className="flex-1 bg-gray-200 text-gray-600 py-2 rounded-lg text-xs text-center">
+                                          Укажите телефон получателя для СБП
+                                        </div>
+                                      )}
+                                      <button
+                                        onClick={() => updatePaymentStatus(transaction.id, 'paid')}
+                                        className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg text-sm font-semibold hover:bg-gray-300"
+                                      >
+                                        Уже оплатил
+                                      </button>
+                                    </>
+                                  )}
+                                  
+                                  {status === 'pending' && (
+                                    <>
+                                      <button
+                                        onClick={() => updatePaymentStatus(transaction.id, 'paid')}
+                                        className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-green-700"
+                                      >
+                                        ✓ Подтвердить
+                                      </button>
+                                      <button
+                                        onClick={() => updatePaymentStatus(transaction.id, 'unpaid')}
+                                        className="flex-1 bg-red-100 text-red-700 py-2 rounded-lg text-sm font-semibold hover:bg-red-200"
+                                      >
+                                        ✗ Не получил
+                                      </button>
+                                    </>
+                                  )}
+                                  
+                                  {status === 'paid' && (
+                                    <div className="w-full text-center text-green-700 font-semibold py-2">
+                                      ✓ Оплата подтверждена
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
 
                       <div className="border-t-2 border-gray-200 pt-4">
@@ -826,11 +1110,62 @@ const PartyCalculator = () => {
                   )}
                 </div>
               )}
+
+              {activeTab === 'help' && (
+                <div className="space-y-4">
+                  <div className="bg-indigo-50 p-4 rounded-lg">
+                    <h3 className="font-semibold text-indigo-900 mb-2 flex items-center gap-2">
+                      <HelpCircle className="w-5 h-5" />
+                      Как пользоваться
+                    </h3>
+                    <ol className="text-sm text-gray-700 space-y-2">
+                      <li><strong>1. Участники</strong> — добавьте всех, кто участвует в мероприятии. Укажите телефон для оплаты через СБП.</li>
+                      <li><strong>2. Покупки</strong> — вносите все расходы: что купили, кто заплатил, количество.</li>
+                      <li><strong>3. Потребление</strong> — укажите кто сколько съел/выпил. Можно вводить числа или выбирать доли (1/2, 1/3 и т.д.)</li>
+                      <li><strong>4. Расчёты</strong> — нажмите "Рассчитать балансы" для автоматического расчёта переводов.</li>
+                    </ol>
+                  </div>
+
+                  <div className="bg-green-50 p-4 rounded-lg">
+                    <h3 className="font-semibold text-green-900 mb-2">💡 Полезные фишки</h3>
+                    <ul className="text-sm text-gray-700 space-y-1">
+                      <li>• Продукты с одной ценой объединяются в один столбец</li>
+                      <li>• Кнопки "Поровну" автоматически распределяют продукты</li>
+                      <li>• Цветовая индикация: 🟢 = ОК, 🟡 = недозаполнено, 🔴 = перебор</li>
+                      <li>• Доли (1/2, 1/3) автоматически учитывают остальных участников</li>
+                      <li>• СБП работает, если указан телефон получателя</li>
+                      <li>• Можно отправить итоги в любой мессенджер</li>
+                    </ul>
+                  </div>
+
+                  <div className="bg-yellow-50 p-4 rounded-lg">
+                    <h3 className="font-semibold text-yellow-900 mb-2">⚠️ Важно знать</h3>
+                    <ul className="text-sm text-gray-700 space-y-1">
+                      <li>• Минимум 2 участника для работы</li>
+                      <li>• При делении на доли последний получает остаток (решает проблему 0.33+0.33+0.33=0.99)</li>
+                      <li>• Данные хранятся только в текущей сессии браузера</li>
+                      <li>• При закрытии приложения всё удалится</li>
+                      <li>• Кнопка "Сброс" удаляет ВСЕ данные безвозвратно</li>
+                    </ul>
+                  </div>
+
+                  <div className="bg-gray-50 p-4 rounded-lg text-center">
+                    <p className="text-sm text-gray-600 mb-2">Вопросы или предложения?</p>
+                    <a 
+                      href="mailto:e@mailvladimir.ru" 
+                      className="text-indigo-600 hover:text-indigo-700 font-medium flex items-center justify-center gap-1"
+                    >
+                      <Mail className="w-4 h-4" />
+                      e@mailvladimir.ru
+                    </a>
+                    <p className="text-xs text-gray-500 mt-2">Разработчик: Владимир Васякин</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Модальное окно подтверждения сброса */}
         {showResetConfirm && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-6 max-w-sm w-full">
