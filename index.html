@@ -23,7 +23,7 @@
 <body>
   <div id="root"></div>
 
-  <script type="text/babel">
+  <script type="text/babel" data-presets="env,react">
     const {useState, useEffect} = React;
 
     /* ================= ERRORS (чтобы не было белого экрана) ================= */
@@ -591,13 +591,25 @@
         </div>
       );
     };
+const container = document.getElementById('root');
 
-    ReactDOM.render(
-      <ErrorBoundary>
-        <PartyCalculator />
-      </ErrorBoundary>,
-      document.getElementById('root')
-    );
-  </script>
+if (ReactDOM.createRoot) {
+  // React 18+
+  const root = ReactDOM.createRoot(container);
+  root.render(
+    <ErrorBoundary>
+      <PartyCalculator />
+    </ErrorBoundary>
+  );
+} else {
+  // React 17 и ниже — запасной вариант
+  ReactDOM.render(
+    <ErrorBoundary>
+      <PartyCalculator />
+    </ErrorBoundary>,
+    container
+  );
+}
+</script>
 </body>
 </html>
