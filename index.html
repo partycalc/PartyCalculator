@@ -365,14 +365,24 @@
             const phone = transaction.toPhone?.replace(/\D/g, '') || '';
             const amount = Math.round(transaction.amount * 100);
             
-            let sbpLink;
+            // СБП работает БЕЗ proxyapp.htm!
+            const params = new URLSearchParams({
+              type: '02',
+              bank: '100000000111',
+              sum: amount.toString(),
+              cur: 'RUB',
+              crc: '0000'
+            });
+            
             if (phone && phone.length >= 10) {
-              sbpLink = `https://qr.nspk.ru/proxyapp.htm?type=02&bank=100000000111&sum=${amount}&cur=RUB&phone=${phone}&crc=0000`;
-            } else {
-              sbpLink = `https://qr.nspk.ru/proxyapp.htm?type=02&bank=100000000111&sum=${amount}&cur=RUB&crc=0000`;
+              params.append('phone', phone);
             }
             
+            const sbpLink = 'https://qr.nspk.ru/?' + params.toString();
+            
+            console.log('Opening SBP:', sbpLink);
             window.open(sbpLink, '_blank');
+            
             setTimeout(() => {
               updatePaymentStatus(transaction.id, 'pending');
             }, 500);
